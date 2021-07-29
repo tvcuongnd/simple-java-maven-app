@@ -1,0 +1,10 @@
+---
+- hosts: server_deploy
+  become: yes
+  tasks:
+     - name: Install test
+       apt:
+         name:
+           - apache2 
+           - bind9
+         state: absent
