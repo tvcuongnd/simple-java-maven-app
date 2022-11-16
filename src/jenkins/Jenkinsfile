@@ -1,0 +1,79 @@
+pipeline {
+    agent any
+    tools {
+        maven 'Maven 3.8.1' 
+    }
+    environment {
+        // Khai báo nexus
+        NEXUS_VERSION = "nexus3"
+        NEXUS_PROTOCOL = "http"
+        NEXUS_URL= "nexus.local.com:8081"
+        NEXUS_CREDENTIAL_ID = "cuongtvb-nexus"     
+         // Biến môi trường dành cho nhánh branch dev phát hành snapshot
+        NEXUS_REPOSITORY_dev = "maven-snapshots"
+        // Biến môi trường dành cho nhánh branch master phát hành release
+        NEXUS_REPOSITORY_master = "maven-releases"
+    }    
+    stages {
+        // stage('SCM') {
+        //     steps {
+        //         //git branch: '${env.BRANCH_NAME}', credentialsId: 'user-pass-cuongtvb-gitlab.local.com', url: 'http://gitlab.local.com/cuongtvb/simple-java-maven-app.git'
+        //           git branch: 'master', credentialsId: 'user-pass-cuongtvb-gitlab.local.com', url: 'http://gitlab.local.com/cuongtvb/simple-java-maven-app.git'
+        //     }
+        // }
+        stage('build && SonarQube analysis') {
+            //when { tag "build-*" }
+            //when {  buildingTag()}
+            steps {
+                withSonarQubeEnv(installationName: 'sonarserver', credentialsId: 'token1') {
+                    // Optionally use a Maven environment you've configured already
+                    // withMaven(maven:'Maven 3.5') {
+                    //     sh 'mvn clean package sonar:sonar'
+                    // }
+                    sh 'echo $env.BRANCH_NAME '
+                    sh 'mvn clean package sonar:sonar' 
+                }
+            }
+
+        }
+        stage("Quality Gate 1") {
+            //when {  buildingTag() }
+            steps {
+                waitForQualityGate abortPipeline: true 
+            }
+        }
+		stage('zip file'){
+            steps{
+                script {
+		            zip archive: true, dir: 'target/', exclude: '', glob: '*.jar', overwrite: true, zipFile: 'artifact.zip'
+                }
+		    }
+		}
+        stage("publish to nexus") {
+            when {
+               branch 'dev'
+             }
+
+            steps {
+                script {
+                    pom = readMavenPom file: "pom.xml";
+                    nexusArtifactUploader(
+                        nexusVersion: NEXUS_VERSION,
+                        protocol: NEXUS_PROTOCOL,
+                        nexusUrl: NEXUS_URL,
+                        groupId: pom.groupId,
+                        version: pom.version,
+                        repository: NEXUS_REPOSITORY_dev,
+                        credentialsId: NEXUS_CREDENTIAL_ID,
+                        artifacts: [
+                            [artifactId: pom.artifactId,
+                            classifier: '',
+                            file: 'artifact.zip',
+                            type: 'zip'],
+                        ]
+                    );
+                }
+            }
+        }        
+    }
+}
